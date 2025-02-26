@@ -91,9 +91,6 @@ class Our_Data:
             img_path = f"{self.data_root}/color/{i}/0.png"
             img_paths.append(img_path)
 
-            with open(f"{self.data_root}/mask/mask_info_{i}.json", "r") as f:
-                data = json.load(f)
-
             mask_path = f"{self.data_root}/mask/{i}/{self.obj_idxes[i]}/0.png"
             mask_paths.append(mask_path)
 

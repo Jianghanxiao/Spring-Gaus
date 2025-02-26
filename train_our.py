@@ -702,7 +702,7 @@ if __name__ == "__main__":
 
     setup_seed(cfg.SEED)
     recorder = Recorder(arg.case_name, cfg, rank=0, time_f=exp_time)
-    exp_path = f"{recorder.exp_id}_{recorder.timestamp}"
+    exp_path = f"{recorder.exp_id}"
 
     if not os.path.exists("checkpoints"):
         os.mkdir("checkpoints")
