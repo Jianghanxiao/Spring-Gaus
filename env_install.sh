@@ -3,6 +3,8 @@ conda activate Spring_Gaus
 conda install -y pytorch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 pytorch-cuda=12.1 -c pytorch -c nvidia
 pip install -r requirements.txt
 
+export CUDA_HOME=/usr/local/cuda-12.1
+
 # install submodules for 3D Gaussian Splatting
 pip install submodules/diff-gaussian-rasterization
 pip install submodules/simple-knn

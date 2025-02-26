@@ -39,7 +39,7 @@ class Recorder:
         self.timestamp = time.strftime("%Y_%m%d_%H%M_%S", time.localtime(time_f if time_f else time.time()))
         self.exp_id = exp_id
         self.cfg = cfg
-        self.dump_path = os.path.join(root_path, f"{exp_id}_{self.timestamp}")
+        self.dump_path = os.path.join(root_path, f"{exp_id}")
         self.eval_dump_path = os.path.join(self.dump_path, "evaluations")
         self.tensorboard_path = os.path.join(self.dump_path, "runs")
         self.rank = rank
