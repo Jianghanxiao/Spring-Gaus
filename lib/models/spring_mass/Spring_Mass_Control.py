@@ -57,8 +57,12 @@ class Spring_Mass_Control(nn.Module):
                         first_frame_controller_points[i] - xyz[j].cpu().numpy()
                     )
                 )
-        self.controller_springs = np.array(self.controller_springs)
-        self.controller_rest_lengths = np.array(self.controller_rest_lengths)
+        if len(self.controller_springs) == 0:
+            self.controller_springs = np.array([[]])
+            self.controller_rest_lengths = np.array([[]])
+        else:
+            self.controller_springs = np.array(self.controller_springs)
+            self.controller_rest_lengths = np.array(self.controller_rest_lengths)
 
         self.controller_springs = torch.tensor(
             self.controller_springs, dtype=torch.int32, device=xyz.device
