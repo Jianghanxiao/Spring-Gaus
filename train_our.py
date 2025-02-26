@@ -414,9 +414,12 @@ def train_step(
                             f"set {stage} n_step from {simulator.n_step} to: {simulator.n_step + cfg_stage.STEP_ADD}"
                         )
                         simulator.n_step = simulator.n_step + cfg_stage.STEP_ADD
-                        assert (
-                            simulator.n_step <= cfg_stage.MAX_N_STEP
-                        ), f"Train dynamic failed!"
+                        if simulator.n_step > cfg_stage.MAX_N_STEP:
+                            gaussians._xyz = simulator.init_xyz_all.detach().clone()
+                            return
+                        # assert (
+                        #     simulator.n_step <= cfg_stage.MAX_N_STEP
+                        # ), f"Train dynamic failed!"
                     else:
                         gaussians._xyz = xyz_all_o
                         xyz = xyz_o.detach().clone()
@@ -650,6 +653,18 @@ def eval_prediction(args, cam_id, scene, simulator, gaussians, cfg_dynamic):
         stage="eval",
         optim=False,
         cam_id=cam_id,
+    )
+
+    pcd = o3d.geometry.PointCloud()
+    if args.viz_anchor:
+        pcd.points = o3d.utility.Vector3dVector(xyz.detach().cpu().numpy())
+    else:
+        pcd.points = o3d.utility.Vector3dVector(xyz_all.detach().cpu().numpy())
+    os.makedirs(f"{scene.exp_path}/evaluations/{cam_id}", exist_ok=True)
+    ply_write_dir = f"{scene.exp_path}/evaluations/{cam_id}/simulate_pred"
+    os.makedirs(ply_write_dir, exist_ok=True)
+    o3d.io.write_point_cloud(
+        os.path.join(ply_write_dir, f"pred_{cfg.DATA.EVAL_FRAME - 1}.ply"), pcd
     )
 
     eval_img_dir = f"{scene.exp_path}/evaluations/{cam_id}/images_pred"

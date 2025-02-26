@@ -168,7 +168,7 @@ class Scene():
                 obs_points = np.vstack(obs_points)
                 obs_colors = np.vstack(obs_colors)
 
-                num_points = 100000
+                num_points = 10000
 
                 # Sample the surface points
                 object_pcd = o3d.geometry.PointCloud()

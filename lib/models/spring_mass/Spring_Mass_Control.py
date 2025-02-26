@@ -57,9 +57,10 @@ class Spring_Mass_Control(nn.Module):
                         first_frame_controller_points[i] - xyz[j].cpu().numpy()
                     )
                 )
+
         if len(self.controller_springs) == 0:
-            self.controller_springs = np.array([[]])
-            self.controller_rest_lengths = np.array([[]])
+            self.controller_springs = np.zeros((0, 2))
+            self.controller_rest_lengths = np.zeros(0)
         else:
             self.controller_springs = np.array(self.controller_springs)
             self.controller_rest_lengths = np.array(self.controller_rest_lengths)
