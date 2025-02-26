@@ -38,6 +38,10 @@ conda install pytorch torchvision torchaudio pytorch-cuda=11.6 cudatoolkit=11.6 
 pip install -r requirements.txt
 
 # install submodules for 3D Gaussian Splatting
+export CUDA_HOME=/usr/local/cuda-11.6
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
 pip install submodules/diff-gaussian-rasterization
 pip install submodules/simple-knn
 
