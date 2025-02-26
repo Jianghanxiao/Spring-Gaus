@@ -180,7 +180,7 @@ class Scene():
                 vertices = np.asarray(mesh.vertices)
                 faces = np.asarray(mesh.triangles)
                 trimesh_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
-                interior_points = trimesh.sample.volume_mesh(trimesh_mesh, num_points * 3)
+                interior_points = trimesh.sample.volume_mesh(trimesh_mesh, num_points)
                 num_final_points = interior_points.shape[0]
 
                 xyz = interior_points
