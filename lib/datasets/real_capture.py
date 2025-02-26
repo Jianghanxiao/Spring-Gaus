@@ -57,6 +57,9 @@ class Real_Capture():
         logger.info(f"{self.name}: {colored(self.obj_name, 'yellow', attrs=['bold'])} use seq: {self.seq}")
 
     def get_colmap_info(self):
+        # Get the camera parameters for the static stage images
+        # Read the masked image and save it into PIL Image, save all into static_cams
+        # R.transpose() and T formulate the w2c matrix
         camdata = read_cameras_binary(os.path.join(self.static_dir, f'colmap/{self.obj_name}/cameras.bin'))
         imdata = read_images_binary(os.path.join(self.static_dir, f'colmap/{self.obj_name}/images.bin'))
 
@@ -101,6 +104,8 @@ class Real_Capture():
         return static_cams
 
     def get_cam_info(self, img_is_mask=None):
+        # Here image_is_mask is True
+        # Read the intrinsic parameters from the static camera info (comap)
         if img_is_mask is None:
             img_is_mask = self.img_is_mask
 

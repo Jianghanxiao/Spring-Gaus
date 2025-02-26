@@ -54,6 +54,7 @@ class Camera(nn.Module):
         if gt_alpha_mask is not None:
             self.original_image *= gt_alpha_mask.to(self.data_device)
         else:
+            # Go here
             self.original_image *= torch.ones((1, self.image_height, self.image_width), device=self.data_device)
 
         self.zfar = 100.0
@@ -89,6 +90,8 @@ WARNED = False
 
 
 def loadCam(id, cam_info, resolution_scale, resolution=-1, data_device='cuda'):
+    # will use resolution=-1, and resize the image to 1600 pixels width
+    # Mainly resize the image and change it to torch tensor, from width x height x 3 to 3 x width x height
     orig_w, orig_h = cam_info.image.size
 
     if resolution in [1, 2, 4, 8]:
@@ -110,6 +113,7 @@ def loadCam(id, cam_info, resolution_scale, resolution=-1, data_device='cuda'):
         scale = float(global_down) * float(resolution_scale)
         resolution = (int(orig_w / scale), int(orig_h / scale))
 
+    # change the image from width x height x 3 to 3 x width x height
     resized_image_rgb = PILtoTorch(cam_info.image, resolution)
 
     gt_image = resized_image_rgb[:3, ...]
@@ -145,6 +149,7 @@ def camera_to_JSON(id, camera: Camera):
     Rt[:3, 3] = camera.T
     Rt[3, 3] = 1.0
 
+    # This should be a typo, Rt should be W2C, the inverse of C2W
     W2C = np.linalg.inv(Rt)
     pos = W2C[:3, 3]
     rot = W2C[:3, :3]

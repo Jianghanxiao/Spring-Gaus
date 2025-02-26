@@ -4,6 +4,8 @@ import json
 import numpy as np
 import trimesh
 import torch
+import pickle
+import open3d as o3d
 from typing import NamedTuple
 from plyfile import PlyData, PlyElement
 from lib.datasets import load_dataset
@@ -85,6 +87,8 @@ class Scene():
         self._getSceneInfo(load_static=load_static)
 
     def _getSceneInfo(self, load_static=True, real_must_img=False):
+        # load static=True and read_must_img=False
+        # Get the camera info and the images for the static scene
         if self.cfg.REAL and load_static:
             self.get_static_sence()
 
@@ -99,6 +103,8 @@ class Scene():
             cam_infos_all = self.dataset.get_cam_info()
 
         logger.info("Loading Scene Info...")
+        # n_frams is for train? 
+        # Every frame has 3 cameras here in the dynamic stage
         for frame_id in etqdm(range(self.dataset.n_frames)):
             train_cam_infos = cam_infos_all[frame_id]
             nerf_normalization = getNerfppNorm(train_cam_infos)
@@ -127,6 +133,7 @@ class Scene():
     def get_static_sence(self):
         static_cam_infos = self.dataset.get_colmap_info()
 
+        # Create cameras fomr it, convert the R.transpose() and T into different camera matrix
         self.static_cam_all = cameraList_from_camInfos(static_cam_infos, 1.0)
 
         static_nerf_normalization = getNerfppNorm(static_cam_infos)
@@ -142,14 +149,56 @@ class Scene():
         self.gaussians = gaussians
 
         if load_path is None:
-            if self.cfg.REAL:
-                colmap_pcd_path = os.path.join(self.dataset.static_dir,
-                                               f'colmap/{self.dataset.obj_name}/colmap_pcd.ply')
-                colmap_pcd = load_vertex_np(colmap_pcd_path)
-                pcd = self.random_points(xyz_max=np.max(colmap_pcd, axis=0), xyz_min=np.min(colmap_pcd, axis=0))
+            if self.cfg.OURDATA:
+                # Load the observed pcd, then do internal filling through alphashape
+                obs_points = []
+                obs_colors = []
+                pcd_path = f"{self.cfg.DATA.DATA_ROOT}/pcd/0.npz"
+                mask_path = f"{self.cfg.DATA.DATA_ROOT}/mask/processed_masks.pkl"
+                data = np.load(pcd_path)
+                with open(mask_path, "rb") as f:
+                    processed_masks = pickle.load(f)
+                for i in range(3):
+                    points = data["points"][i]
+                    colors = data["colors"][i]
+                    mask = processed_masks[0][i]["object"]
+                    obs_points.append(points[mask])
+                    obs_colors.append(colors[mask])
+
+                obs_points = np.vstack(obs_points)
+                obs_colors = np.vstack(obs_colors)
+
+                num_points = 100000
+
+                # Sample the surface points
+                object_pcd = o3d.geometry.PointCloud()
+                object_pcd.points = o3d.utility.Vector3dVector(obs_points)
+                alpha = 0.03
+                mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(
+                    object_pcd, alpha)
+                # Sample the interior points
+                vertices = np.asarray(mesh.vertices)
+                faces = np.asarray(mesh.triangles)
+                trimesh_mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
+                interior_points = trimesh.sample.volume_mesh(trimesh_mesh, num_points * 3)
+                num_final_points = interior_points.shape[0]
+
+                xyz = interior_points
+                shs = np.random.random((num_final_points, 3)) / 255.0
+
+                ply_path = os.path.join(self.exp_path, "input_points.ply")
+                storePly(ply_path, xyz, SH2RGB(shs) * 255)
+
+                pcd = fetchPly(ply_path)
             else:
-                pcd = self.random_points(xyz_max=np.array(self.cfg.DATA.XYZ_MAX),
-                                         xyz_min=np.array(self.cfg.DATA.XYZ_MIN))
+                if self.cfg.REAL:
+                    colmap_pcd_path = os.path.join(self.dataset.static_dir,
+                                                f'colmap/{self.dataset.obj_name}/colmap_pcd.ply')
+                    colmap_pcd = load_vertex_np(colmap_pcd_path)
+                    pcd = self.random_points(xyz_max=np.max(colmap_pcd, axis=0), xyz_min=np.min(colmap_pcd, axis=0))
+                else:
+                    pcd = self.random_points(xyz_max=np.array(self.cfg.DATA.XYZ_MAX),
+                                            xyz_min=np.array(self.cfg.DATA.XYZ_MIN))
             self.gaussians.create_from_pcd(pcd, self.static_cameras_extent_all)
         else:
             logger.info(f"Load gaussians from {load_path}...")

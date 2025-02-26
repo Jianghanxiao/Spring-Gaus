@@ -3,6 +3,7 @@ from lib.utils.config import CN
 from ..utils.builder import build_dataset
 from .mpm_synthetic import MPM_Synthetic
 from .real_capture import Real_Capture
+from .our_data import Our_Data
 
 
 def create_dataset(cfg: CN, data_preset: CN):

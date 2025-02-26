@@ -344,6 +344,7 @@ def render_step(args,
 
 
 def get_simulator(args, cfg, scene: Scene, cfg_stage, init_velocity, load_g):
+    # args.dy_reload = None
     gaussians = GaussianModel_isotropic()
 
     static_name = f'regist_gaussians_{cfg.DATA.SEQ}' if cfg.REAL else 'static_gaussians'
@@ -375,6 +376,7 @@ def get_simulator(args, cfg, scene: Scene, cfg_stage, init_velocity, load_g):
         load_g=load_g,
     )
     simulator = simulator.cuda()
+    # Only used to calculate the interpolation coefficients
     simulator.set_all_particle(xyz_all)
 
     if args.dy_reload is not None and init_velocity is not None:
@@ -566,17 +568,17 @@ def train_velocity(args, cfg, scene: Scene, recorder: Recorder):
     cfg_velocity = cfg.VELOCITY
     simulator, gaussians = get_simulator(args, cfg, scene, cfg_stage=cfg_velocity, init_velocity=None, load_g=None)
     simulator.trainging_velocity_setup(cfg_velocity.OPTIMIZE)
-    if cfg_velocity.ITER_REFINE > 0:
-        gaussians.training_setup_refine(cfg_velocity.GAUS_REFINE)
-        refine_step(
-            args=args,
-            cfg=cfg,
-            cfg_stage=cfg_velocity,
-            stage='velocity',
-            simulator=simulator,
-            scene=scene,
-            gaussians=gaussians,
-        )
+    # if cfg_velocity.ITER_REFINE > 0:
+    #     gaussians.training_setup_refine(cfg_velocity.GAUS_REFINE)
+    #     refine_step(
+    #         args=args,
+    #         cfg=cfg,
+    #         cfg_stage=cfg_velocity,
+    #         stage='velocity',
+    #         simulator=simulator,
+    #         scene=scene,
+    #         gaussians=gaussians,
+    #     )
     gaussians.training_setup_dynamic(cfg_velocity.GAUS_CFG)
 
     train_step(
@@ -629,17 +631,17 @@ def train_dynamic(args, cfg, scene: Scene, recorder: Recorder):
                                          load_g=load_g)
     simulator.training_setup(cfg_dynamic.OPTIMIZE)
 
-    if args.dy_reload is None and cfg_dynamic.ITER_REFINE > 0:
-        gaussians.training_setup_refine(cfg_dynamic.GAUS_CFG)
-        refine_step(
-            args=args,
-            cfg=cfg,
-            cfg_stage=cfg_dynamic,
-            stage='dynamic',
-            simulator=simulator,
-            scene=scene,
-            gaussians=gaussians,
-        )
+    # if args.dy_reload is None and cfg_dynamic.ITER_REFINE > 0:
+    #     gaussians.training_setup_refine(cfg_dynamic.GAUS_CFG)
+    #     refine_step(
+    #         args=args,
+    #         cfg=cfg,
+    #         cfg_stage=cfg_dynamic,
+    #         stage='dynamic',
+    #         simulator=simulator,
+    #         scene=scene,
+    #         gaussians=gaussians,
+    #     )
 
     gaussians.training_setup_dynamic(cfg_dynamic.GAUS_CFG)
 
@@ -805,6 +807,8 @@ if __name__ == '__main__':
         os.mkdir('checkpoints')
 
     static_name = 'static_gaussians'
+    # Load the camera info and images from the static stage
+    # Load the camera info and masks from teh dynamic stage (not load the rgb images)
     if not os.path.exists(os.path.join(cfg.CHECKPOINTS_ROOT, static_name)):
         scene = Scene(cfg, exp_path, shuffle=False, load_static=True)
     else:
@@ -822,8 +826,10 @@ if __name__ == '__main__':
         crit_tv = TVLoss(p=2)
         regist_name = f'regist_gaussians_{cfg.DATA.SEQ}'
         if not os.path.exists(os.path.join(cfg.CHECKPOINTS_ROOT, regist_name)):
+            # Here read masked image for the dynamic part, no need to load static again
             scene._getSceneInfo(load_static=False, real_must_img=True)
             register_gaus(arg, cfg, scene, cfg.CHECKPOINTS_ROOT)
+            # Here read again the mask only, no need to load static again
             scene._getSceneInfo(load_static=False)
 
     # Velocity
@@ -835,9 +841,11 @@ if __name__ == '__main__':
     if not os.path.exists(velocity_file):
         logger.info("Begin Train Velocity...")
         if cfg.REAL:
+            # Here read masked image for the dynamic part, no need to load static again
             scene._getSceneInfo(load_static=False, real_must_img=True)
         train_velocity(arg, cfg, scene, recorder)
         if cfg.REAL:
+            # Set back to mask
             scene._getSceneInfo(load_static=False)
 
     # Dynamic

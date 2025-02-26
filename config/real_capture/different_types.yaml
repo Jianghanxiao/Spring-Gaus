@@ -1,0 +1,24 @@
+DEFAULT: config/real_capture/default.yaml
+
+REAL: True
+OURDATA: True
+
+DATA:
+  TYPE: Our_Data
+  N_CAM: 3
+  H: 480
+  W: 848
+  WHITE_BKG: False
+  BC: [[[0, 0, 0], [0, 0, -1]]]
+
+  FREQ: 30
+  GLOBAL_M: 1
+  GLOBAL_K: 200
+  GLOBAL_DAMP: 0.1
+
+  EVAL_FREQ: 30
+
+  IMG_IS_MASK: True
+
+DYNAMIC:
+  TYPE: Spring_Mass_Control
