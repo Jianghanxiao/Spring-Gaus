@@ -216,20 +216,12 @@ def get_simulator(args, cfg, scene: Scene, cfg_stage, init_velocity, load_g):
         xyz = uniform_sampling(xyz_all, voxel_size=0.001)
         xyz = xyz[random.sample(range(xyz.shape[0]), cfg_stage.N_SAMPLE), :]
 
-    # # Load the control points
-    # with open(f"{cfg.DATA.DATA_ROOT}/final_data.pkl", "rb") as f:
-    #     data = pickle.load(f)
-    # controller_points = torch.tensor(
-    #     data["controller_points"], dtype=torch.float32, device="cuda"
-    # )
-
     simulator = build_simulator(
         cfg_stage,
         xyz=xyz,
         data=cfg.DATA,
         init_velocity=init_velocity,
         load_g=load_g,
-        controller_points=controller_points,
     )
     simulator = simulator.cuda()
     # Only used to calculate the interpolation coefficients
@@ -369,6 +361,7 @@ def train_step(
     background = torch.tensor(scene.dataset.bg, dtype=torch.float32, device="cuda")
     simulator.train()
     train_bar = etqdm(range(1, cfg_stage.ITERATIONS + 1))
+
     for iteration in train_bar:
 
         if iteration in cfg_stage.N_STEP_ITER:
@@ -384,7 +377,7 @@ def train_step(
         v = simulator.init_v.detach().clone()
         gaussians._xyz = xyz_all
 
-        for frame_id in range(max_frame):
+        for frame_id in range(max_frame-1):
             viewpoint_stack = scene.getTrainCameras(frame_id).copy()
             cam_id = random.randint(1, cfg.DATA.N_CAM) - 1
 
@@ -544,6 +537,7 @@ def train_dynamic(args, cfg, scene: Scene, recorder: Recorder):
         scene=scene,
         gaussians=gaussians,
     )
+
     if simulator.scheduler is None:
         recorder.record_checkpoints_woscheduler(
             simulator,
@@ -605,7 +599,7 @@ def eval_prediction(args, cam_id, scene, simulator, gaussians, cfg_dynamic):
     )
     gaussians._xyz = xyz_all
 
-    for frame_id in etqdm(range(cfg.DATA.EVAL_FRAME)):
+    for frame_id in etqdm(range(cfg.DATA.EVAL_FRAME - 1)):
         viewpoint_cam = scene.getEvalCameras(0, cam_id)
         loss, render_img = render_step(
             args=args,
@@ -644,6 +638,20 @@ def eval_prediction(args, cam_id, scene, simulator, gaussians, cfg_dynamic):
         )
         gaussians._xyz = xyz_all
 
+    viewpoint_cam = scene.getEvalCameras(0, cam_id)
+    loss, render_img = render_step(
+        args=args,
+        cfg_stage=cfg_dynamic,
+        iteration=-2,
+        viewpoint_cam=viewpoint_cam,
+        frame_id=cfg.DATA.EVAL_FRAME - 1,
+        gaussians=gaussians,
+        background=background,
+        stage="eval",
+        optim=False,
+        cam_id=cam_id,
+    )
+
     eval_img_dir = f"{scene.exp_path}/evaluations/{cam_id}/images_pred"
     image_to_video(
         eval_img_dir,
@@ -677,8 +685,6 @@ if __name__ == "__main__":
     cfg.DATA.DATA_ROOT = f"{arg.base_path}/{arg.case_name}"
     cfg.DATA.OBJ_NAME = arg.case_name
     cfg.CHECKPOINTS_ROOT = f"checkpoints/{arg.case_name}"
-
-    cfg.DYNAMIC.ITERATIONS = 1
 
     # Read the split.json file
     with open(f"{cfg.DATA.DATA_ROOT}/split.json", "r") as file:

@@ -2,7 +2,8 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
-
+import open3d as o3d
+import pickle
 from termcolor import colored
 from copy import deepcopy
 from pytorch3d.ops import knn_points
@@ -15,10 +16,56 @@ from lib.utils.net_utils import init_weights
 @SIMULATOR.register_module()
 class Spring_Mass_Control(nn.Module):
 
-    def __init__(self, cfg, xyz: torch.Tensor, init_velocity=None, load_g=None) -> None:
+    def __init__(
+        self,
+        cfg,
+        xyz: torch.Tensor,
+        init_velocity=None,
+        load_g=None,
+    ) -> None:
         super().__init__()
         self.name = type(self).__name__
         self.cfg = cfg
+
+        # Load the control points
+        with open(f"{cfg.DATA.DATA_ROOT}/final_data.pkl", "rb") as f:
+            data = pickle.load(f)
+        controller_points = data["controller_points"]
+
+        controller_points = torch.tensor(
+            np.array(controller_points), dtype=torch.float32, device="cuda"
+        )
+
+        # Connect the springs between the controller points and the anchor points
+        self.controller_points = controller_points
+        first_frame_controller_points = controller_points[0].cpu().numpy()
+        object_pcd = o3d.geometry.PointCloud()
+        object_pcd.points = o3d.utility.Vector3dVector(xyz.cpu().numpy())
+        pcd_tree = o3d.geometry.KDTreeFlann(object_pcd)
+        self.controller_springs = []
+        self.controller_rest_lengths = []
+        for i in range(len(first_frame_controller_points)):
+            [k, idx, _] = pcd_tree.search_hybrid_vector_3d(
+                first_frame_controller_points[i],
+                0.04,
+                50,
+            )
+            for j in idx:
+                self.controller_springs.append([i, j])
+                self.controller_rest_lengths.append(
+                    np.linalg.norm(
+                        first_frame_controller_points[i] - xyz[j].cpu().numpy()
+                    )
+                )
+        self.controller_springs = np.array(self.controller_springs)
+        self.controller_rest_lengths = np.array(self.controller_rest_lengths)
+
+        self.controller_springs = torch.tensor(
+            self.controller_springs, dtype=torch.int32, device=xyz.device
+        )
+        self.controller_rest_lengths = torch.tensor(
+            self.controller_rest_lengths, dtype=torch.float32, device=xyz.device
+        )
 
         self.eps = 1e-14
         self.edge = 1e-6
@@ -399,35 +446,6 @@ class Spring_Mass_Control(nn.Module):
 
         return xyz, v
 
-    # def apply_bc_force(self, force, xyz, v, fric_k):
-    #     k_bc = 10**self.k_bc / (self.origin_len.mean() + self.eps)
-
-    #     if self.inverse_axis:
-    #         f_index = torch.where(xyz[:, self.ground_axis] >= self.ground)[0]
-    #     else:
-    #         f_index = torch.where(xyz[:, self.ground_axis] <= self.ground)[0]
-
-    #     force_f = -k_bc * (xyz[f_index, self.ground_axis] - self.ground)
-    #     if self.unlinear_foce and self.power > 0:
-    #         force_f = force_f * torch.abs(xyz[f_index, self.ground_axis] - self.ground)**self.power
-
-    #     force[f_index, self.ground_axis] = force[f_index, self.ground_axis] + force_f
-    #     for axis in self.free_axis:
-    #         frik_force = False
-    #         if frik_force:
-    #             v_direct = v[f_index, axis]
-    #             v_direct = torch.where(
-    #                 v_direct > 0,
-    #                 torch.tensor(1.0).to(self.device),
-    #                 torch.where(v_direct < 0,
-    #                             torch.tensor(-1.0).to(self.device),
-    #                             torch.tensor(0.0).to(self.device)))
-    #             force[f_index, axis] = force[f_index, axis] - force[f_index, axis] * fric_k * v_direct
-    #         else:
-    #             v[f_index, axis] = fric_k * v[f_index, axis]
-
-    #     return force, xyz, v
-
     @torch.no_grad()
     def viz_step(self, xyz, v, K, damp, frame_id, **kwargs):
         import cv2
@@ -479,7 +497,9 @@ class Spring_Mass_Control(nn.Module):
         comb_image = np.hstack(img_list)
         imageio.imwrite(os.path.join(viz_force_dir, f"{frame_id:02}.png"), comb_image)
 
-    def step(self, xyz, v, K, m, rebound_k, fric_k, damp, dt):
+    def step(
+        self, xyz, v, K, m, rebound_k, fric_k, damp, dt, current_controller_points=None
+    ):
         """
         :param
             dt: float
@@ -496,6 +516,23 @@ class Spring_Mass_Control(nn.Module):
 
         # compute_force
         force = self.compute_force(xyz=xyz, v=v, K=K, damp=damp)
+
+        # Calculate the forces from the controller springs
+        controller_idx = self.controller_springs[:, 0]
+        anchor_idx = self.controller_springs[:, 1]
+        controller_pos = current_controller_points[controller_idx]
+        anchor_pos = xyz[anchor_idx]
+        dis = anchor_pos - controller_pos
+        d = dis / torch.max(
+            torch.norm(dis, dim=1)[:, None], torch.tensor(1e-6, device="cuda")
+        )
+        spring_forces = (
+            3e4
+            * (torch.norm(dis, dim=1) / self.controller_rest_lengths - 1)[:, None]
+            * d
+        )
+        force.index_add_(0, anchor_idx, -spring_forces)
+
         force_sum = force + m.unsqueeze(1) * self.g.unsqueeze(0).to(
             self.device
         ) * self.g_f.unsqueeze(0).to(
@@ -599,7 +636,18 @@ class Spring_Mass_Control(nn.Module):
         if viz:
             self.viz_step(xyz, v, K, damp, frame_id, **kwargs)
 
-        for _ in range(self.n_step):
+        # Set the control point
+        original_control_point = self.controller_points[frame_id - 1]
+        target_control_point = self.controller_points[frame_id]
+
+        for i in range(self.n_step):
+            current_controller_points = (
+                original_control_point
+                + (target_control_point - original_control_point)
+                * (i + 1)
+                / self.n_step
+            )
+
             xyz, v = self.step(
                 xyz=xyz,
                 v=v,
@@ -609,6 +657,7 @@ class Spring_Mass_Control(nn.Module):
                 fric_k=fric_k,
                 damp=damp,
                 dt=dt,
+                current_controller_points=current_controller_points,
             )
             torch.cuda.empty_cache()
 
